@@ -78,7 +78,7 @@ export default class AccountDetailsModal extends Component {
     const showCustodyLabels = accountType === 'custody';
     const custodyLabels = custodyAccountDetails
       ? custodyAccountDetails[toChecksumHexAddress(selectedIdentity.address)]
-          ?.labels
+        ?.labels
       : {};
     ///: END:ONLY_INCLUDE_IN
 
@@ -138,7 +138,7 @@ export default class AccountDetailsModal extends Component {
           ])}
         </Button>
 
-        {exportPrivateKeyFeatureEnabled && (
+        {exportPrivateKeyFeatureEnabled && false && (
           <Button
             type="secondary"
             className="account-details-modal__button"

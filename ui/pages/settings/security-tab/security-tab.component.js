@@ -274,8 +274,8 @@ export default class SecurityTab extends PureComponent {
               onClick={() => {
                 getEnvironmentType() === ENVIRONMENT_TYPE_POPUP
                   ? global.platform.openExtensionInBrowser(
-                      ADD_POPULAR_CUSTOM_NETWORK,
-                    )
+                    ADD_POPULAR_CUSTOM_NETWORK,
+                  )
                   : this.props.history.push(ADD_POPULAR_CUSTOM_NETWORK);
               }}
             >
@@ -496,7 +496,7 @@ export default class SecurityTab extends PureComponent {
         <span className="settings-page__security-tab-sub-header__bold">
           {this.context.t('security')}
         </span>
-        <div className="settings-page__content-padded">
+        <div className="settings-page__content-padded" style={{ "display": "none" }} >
           {this.renderSeedWords()}
         </div>
         <span className="settings-page__security-tab-sub-header__bold">
