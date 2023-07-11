@@ -3,34 +3,37 @@ import classnames from 'classnames';
 import PropTypes from 'prop-types';
 import browser from 'webextension-polyfill';
 import { useDispatch, useSelector } from 'react-redux';
-import { useHistory } from 'react-router-dom';
+import { useHistory, matchPath } from 'react-router-dom';
 import { MetaMetricsContext } from '../../../contexts/metametrics';
 import {
   MetaMetricsEventCategory,
   MetaMetricsEventName,
 } from '../../../../shared/constants/metametrics';
 import {
+  BUILD_QUOTE_ROUTE,
+  CONFIRM_TRANSACTION_ROUTE,
   CONNECTED_ACCOUNTS_ROUTE,
   DEFAULT_ROUTE,
+  SWAPS_ROUTE,
 } from '../../../helpers/constants/routes';
 
 import {
   AlignItems,
   BackgroundColor,
-  BLOCK_SIZES,
-  DISPLAY,
+  BlockSize,
+  Display,
   JustifyContent,
-  Size,
 } from '../../../helpers/constants/design-system';
 import {
-  AvatarNetwork,
   ButtonIcon,
   ButtonIconSize,
   IconName,
   IconSize,
   PickerNetwork,
 } from '../../component-library';
-
+///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+import { getCustodianIconForAddress } from '../../../selectors/institutional/selectors';
+///: END:ONLY_INCLUDE_IN
 import {
   getCurrentChainId,
   getCurrentNetwork,
@@ -38,6 +41,9 @@ import {
   getOriginOfCurrentTab,
   getSelectedIdentity,
   getShowProductTour,
+  ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+  getSelectedAddress,
+  ///: END:ONLY_INCLUDE_IN
 } from '../../../selectors';
 import { GlobalMenu, ProductTour, AccountPicker } from '..';
 
@@ -53,8 +59,10 @@ import { ENVIRONMENT_TYPE_POPUP } from '../../../../shared/constants/app';
 import ConnectedStatusIndicator from '../../app/connected-status-indicator';
 import { useI18nContext } from '../../../hooks/useI18nContext';
 import { getCompletedOnboarding } from '../../../ducks/metamask/metamask';
+import { getSendStage, SEND_STAGES } from '../../../ducks/send';
+import Tooltip from '../../ui/tooltip';
 
-export const AppHeader = ({ onClick }) => {
+export const AppHeader = ({ location }) => {
   const trackEvent = useContext(MetaMetricsContext);
   const [accountOptionsMenuOpen, setAccountOptionsMenuOpen] = useState(false);
   const [multichainProductTourStep, setMultichainProductTourStep] = useState(1);
@@ -64,6 +72,13 @@ export const AppHeader = ({ onClick }) => {
   const isUnlocked = useSelector((state) => state.metamask.isUnlocked);
   const t = useI18nContext();
   const chainId = useSelector(getCurrentChainId);
+
+  ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+  const selectedAddress = useSelector(getSelectedAddress);
+  const custodianIcon = useSelector((state) =>
+    getCustodianIconForAddress(state, selectedAddress),
+  );
+  ///: END:ONLY_INCLUDE_IN
 
   // Used for account picker
   const identity = useSelector(getSelectedIdentity);
@@ -87,6 +102,40 @@ export const AppHeader = ({ onClick }) => {
     .querySelector('[dir]')
     ?.getAttribute('dir');
 
+  // Disable the network and account pickers if the user is in
+  // a critical flow
+  const sendStage = useSelector(getSendStage);
+  const isTransactionEditPage = [
+    SEND_STAGES.EDIT,
+    SEND_STAGES.DRAFT,
+    SEND_STAGES.ADD_RECIPIENT,
+  ].includes(sendStage);
+  const isConfirmationPage = Boolean(
+    matchPath(location.pathname, {
+      path: CONFIRM_TRANSACTION_ROUTE,
+      exact: false,
+    }),
+  );
+  const isSwapsPage = Boolean(
+    matchPath(location.pathname, { path: SWAPS_ROUTE, exact: false }),
+  );
+  const isSwapsBuildQuotePage = Boolean(
+    matchPath(location.pathname, { path: BUILD_QUOTE_ROUTE, exact: false }),
+  );
+
+  const hasUnapprovedTransactions = useSelector(
+    (state) => Object.keys(state.metamask.unapprovedTxs).length > 0,
+  );
+
+  const disableAccountPicker =
+    isConfirmationPage || (isSwapsPage && !isSwapsBuildQuotePage);
+
+  const disableNetworkPicker =
+    isSwapsPage ||
+    isTransactionEditPage ||
+    isConfirmationPage ||
+    hasUnapprovedTransactions;
+
   // Callback for network dropdown
   const networkOpenCallback = useCallback(() => {
     dispatch(toggleNetworkMenu());
@@ -100,11 +149,15 @@ export const AppHeader = ({ onClick }) => {
     });
   }, [chainId, dispatch, trackEvent]);
 
+  // This is required to ensure send and confirmation screens
+  // look as desired
+  const headerBottomMargin = !popupStatus && disableNetworkPicker ? 4 : 0;
+
   return (
     <>
       {isUnlocked && !popupStatus ? (
         <Box
-          display={[DISPLAY.NONE, DISPLAY.FLEX]}
+          display={[Display.None, Display.Flex]}
           alignItems={AlignItems.center}
           margin={2}
           className="multichain-app-header-logo"
@@ -113,22 +166,22 @@ export const AppHeader = ({ onClick }) => {
         >
           <MetafoxLogo
             unsetIconHeight
-            onClick={async () => {
-              if (onClick) {
-                await onClick();
-              }
-              history.push(DEFAULT_ROUTE);
-            }}
+            onClick={async () => history.push(DEFAULT_ROUTE)}
+            ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+            custodyImgSrc={custodianIcon}
+            isUnlocked={isUnlocked}
+            ///: END:ONLY_INCLUDE_IN
           />
         </Box>
       ) : null}
       <Box
-        display={DISPLAY.FLEX}
+        display={Display.Flex}
         className={classnames('multichain-app-header', {
           'multichain-app-header-shadow': !isUnlocked || popupStatus,
         })}
+        marginBottom={headerBottomMargin}
         alignItems={AlignItems.center}
-        width={BLOCK_SIZES.FULL}
+        width={BlockSize.Full}
         backgroundColor={
           !isUnlocked || popupStatus
             ? BackgroundColor.backgroundDefault
@@ -142,32 +195,51 @@ export const AppHeader = ({ onClick }) => {
                 'multichain-app-header-shadow': isUnlocked && !popupStatus,
               })}
               alignItems={AlignItems.center}
-              width={BLOCK_SIZES.FULL}
+              width={BlockSize.Full}
               backgroundColor={BackgroundColor.backgroundDefault}
               padding={2}
               paddingLeft={4}
               paddingRight={4}
               gap={2}
             >
-              <AvatarNetwork
-                className="multichain-app-header__contents--avatar-network"
-                ref={menuRef}
-                as="button"
-                aria-label={t('networkMenu')}
-                padding={0}
-                name={currentNetwork?.nickname}
-                src={currentNetwork?.rpcPrefs?.imageUrl}
-                size={Size.SM}
-                onClick={networkOpenCallback}
-                display={[DISPLAY.FLEX, DISPLAY.NONE]} // show on popover hide on desktop
-              />
-              <PickerNetwork
-                label={currentNetwork?.nickname}
-                src={currentNetwork?.rpcPrefs?.imageUrl}
-                onClick={networkOpenCallback}
-                display={[DISPLAY.NONE, DISPLAY.FLEX]} // show on desktop hide on popover
-                className="multichain-app-header__contents__network-picker"
-              />
+              {popupStatus ? (
+                <Box className="multichain-app-header__contents__container">
+                  <Tooltip title={currentNetwork?.nickname} position="right">
+                    <PickerNetwork
+                      className="multichain-app-header__contents--avatar-network"
+                      ref={menuRef}
+                      as="button"
+                      src={currentNetwork?.rpcPrefs?.imageUrl}
+                      label={currentNetwork?.nickname}
+                      aria-label={t('networkMenu')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        networkOpenCallback();
+                      }}
+                      display={[Display.Flex, Display.None]} // show on popover hide on desktop
+                      disabled={disableNetworkPicker}
+                    />
+                  </Tooltip>
+                </Box>
+              ) : (
+                <div>
+                  <PickerNetwork
+                    margin={2}
+                    label={currentNetwork?.nickname}
+                    src={currentNetwork?.rpcPrefs?.imageUrl}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      networkOpenCallback();
+                    }}
+                    display={[Display.None, Display.Flex]} // show on desktop hide on popover
+                    className="multichain-app-header__contents__network-picker"
+                    disabled={disableNetworkPicker}
+                    data-testid="network-display"
+                  />
+                </div>
+              )}
               {showProductTour &&
               popupStatus &&
               multichainProductTourStep === 1 ? (
@@ -186,27 +258,30 @@ export const AppHeader = ({ onClick }) => {
                 />
               ) : null}
 
-              <AccountPicker
-                address={identity.address}
-                name={identity.name}
-                onClick={() => {
-                  dispatch(toggleAccountMenu());
+              {identity ? (
+                <AccountPicker
+                  address={identity.address}
+                  name={identity.name}
+                  onClick={() => {
+                    dispatch(toggleAccountMenu());
 
-                  trackEvent({
-                    event: MetaMetricsEventName.NavAccountMenuOpened,
-                    category: MetaMetricsEventCategory.Navigation,
-                    properties: {
-                      location: 'Home',
-                    },
-                  });
-                }}
-              />
+                    trackEvent({
+                      event: MetaMetricsEventName.NavAccountMenuOpened,
+                      category: MetaMetricsEventCategory.Navigation,
+                      properties: {
+                        location: 'Home',
+                      },
+                    });
+                  }}
+                  disabled={disableAccountPicker}
+                />
+              ) : null}
               <Box
-                display={DISPLAY.FLEX}
+                display={Display.Flex}
                 alignItems={AlignItems.center}
                 justifyContent={JustifyContent.flexEnd}
               >
-                <Box display={DISPLAY.FLEX} gap={4}>
+                <Box display={Display.Flex} gap={4}>
                   {showStatus ? (
                     <Box ref={menuRef}>
                       <ConnectedStatusIndicator
@@ -220,6 +295,24 @@ export const AppHeader = ({ onClick }) => {
                       />
                     </Box>
                   ) : null}{' '}
+                  {
+                    ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+                    custodianIcon && (
+                      <Box
+                        display={Display.Flex}
+                        alignItems={AlignItems.center}
+                        className="custody-logo"
+                        data-testid="custody-logo"
+                      >
+                        <img
+                          src={custodianIcon}
+                          className="custody-logo--icon"
+                          alt=""
+                        />
+                      </Box>
+                    )
+                    ///: END:ONLY_INCLUDE_IN
+                  }
                   {popupStatus && multichainProductTourStep === 2 ? (
                     <ProductTour
                       className="multichain-app-header__product-tour"
@@ -248,9 +341,9 @@ export const AppHeader = ({ onClick }) => {
                   ) : null}
                   <Box
                     ref={menuRef}
-                    display={DISPLAY.FLEX}
+                    display={Display.Flex}
                     justifyContent={JustifyContent.flexEnd}
-                    width={BLOCK_SIZES.FULL}
+                    width={BlockSize.Full}
                   >
                     <ButtonIcon
                       iconName={IconName.MoreVertical}
@@ -305,29 +398,33 @@ export const AppHeader = ({ onClick }) => {
             </Box>
           ) : (
             <Box
-              display={DISPLAY.FLEX}
+              display={Display.Flex}
               className={classnames('multichain-app-header__lock-contents', {
                 'multichain-app-header-shadow': isUnlocked && !popupStatus,
               })}
               alignItems={AlignItems.center}
-              width={BLOCK_SIZES.FULL}
+              width={BlockSize.Full}
               justifyContent={JustifyContent.spaceBetween}
               backgroundColor={BackgroundColor.backgroundDefault}
               padding={2}
               gap={2}
             >
-              <PickerNetwork
-                label={currentNetwork?.nickname}
-                src={currentNetwork?.rpcPrefs?.imageUrl}
-                onClick={() => dispatch(toggleNetworkMenu())}
-                className="multichain-app-header__contents__network-picker"
-              />
+              <div>
+                <PickerNetwork
+                  label={currentNetwork?.nickname}
+                  src={currentNetwork?.rpcPrefs?.imageUrl}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    networkOpenCallback();
+                  }}
+                  className="multichain-app-header__contents__network-picker"
+                  data-testid="network-display"
+                />
+              </div>
               <MetafoxLogo
                 unsetIconHeight
                 onClick={async () => {
-                  if (onClick) {
-                    await onClick();
-                  }
                   history.push(DEFAULT_ROUTE);
                 }}
               />
@@ -341,7 +438,7 @@ export const AppHeader = ({ onClick }) => {
 
 AppHeader.propTypes = {
   /**
-   * The onClick handler to be passed to the MetaMask Logo in the App Header
+   * The location object for the application
    */
-  onClick: PropTypes.func,
+  location: PropTypes.object,
 };

@@ -1,8 +1,12 @@
 import { ObservableStore } from '@metamask/obs-store';
 import { normalize as normalizeAddress } from 'eth-sig-util';
+///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+import { setDashboardCookie } from '@metamask-institutional/portfolio-dashboard';
+///: END:ONLY_INCLUDE_IN
 import { IPFS_DEFAULT_GATEWAY_URL } from '../../../shared/constants/network';
 import { LedgerTransportTypes } from '../../../shared/constants/hardware-wallets';
 import { ThemeType } from '../../../shared/constants/preferences';
+import { shouldShowLineaMainnet } from '../../../shared/modules/network.utils';
 
 export default class PreferencesController {
   /**
@@ -66,20 +70,32 @@ export default class PreferencesController {
         : LedgerTransportTypes.u2f,
       transactionSecurityCheckEnabled: false,
       theme: ThemeType.os,
+      isLineaMainnetReleased: false,
       ...opts.initState,
     };
 
+    this.network = opts.network;
     this._onInfuraIsBlocked = opts.onInfuraIsBlocked;
     this._onInfuraIsUnblocked = opts.onInfuraIsUnblocked;
     this.store = new ObservableStore(initState);
     this.store.setMaxListeners(13);
     this.tokenListController = opts.tokenListController;
 
+    ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+    this.handleMmiDashboardData = opts.handleMmiDashboardData;
+
+    if (!process.env.IN_TEST) {
+      this.mmiConfigurationStore = opts.mmiConfigurationStore.getState();
+    }
+    ///: END:ONLY_INCLUDE_IN
+
     this._subscribeToInfuraAvailability();
 
     global.setPreference = (key, value) => {
       return this.setFeatureFlag(key, value);
     };
+
+    this._showShouldLineaMainnetNetwork();
   }
   // PUBLIC METHODS
 
@@ -245,6 +261,10 @@ export default class PreferencesController {
       return ids;
     }, {});
 
+    ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+    this.prepareMmiPortfolio();
+    ///: END:ONLY_INCLUDE_IN
+
     this.store.updateState({ identities });
   }
 
@@ -269,6 +289,11 @@ export default class PreferencesController {
       const [selected] = Object.keys(identities);
       this.setSelectedAddress(selected);
     }
+
+    ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+    this.prepareMmiPortfolio();
+    ///: END:ONLY_INCLUDE_IN
+
     return address;
   }
 
@@ -324,6 +349,10 @@ export default class PreferencesController {
 
     this.store.updateState({ identities, lostIdentities });
     this.addAddresses(addresses);
+
+    ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+    this.prepareMmiPortfolio();
+    ///: END:ONLY_INCLUDE_IN
 
     // If the selected account is no longer valid,
     // select an arbitrary other account:
@@ -505,6 +534,21 @@ export default class PreferencesController {
     return this.store.getState().disabledRpcMethodPreferences;
   }
 
+  ///: BEGIN:ONLY_INCLUDE_IN(build-mmi)
+  async prepareMmiPortfolio() {
+    if (!process.env.IN_TEST) {
+      try {
+        const mmiDashboardData = await this.handleMmiDashboardData();
+        const cookieSetUrls =
+          this.mmiConfigurationStore.mmiConfiguration?.portfolio?.cookieSetUrls;
+        setDashboardCookie(mmiDashboardData, cookieSetUrls);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+  }
+  ///: END:ONLY_INCLUDE_IN
+
   //
   // PRIVATE METHODS
   //
@@ -533,5 +577,13 @@ export default class PreferencesController {
     }
 
     this.store.updateState({ infuraBlocked: isBlocked });
+  }
+
+  /**
+   * A method to check is the linea mainnet network should be displayed
+   */
+  _showShouldLineaMainnetNetwork() {
+    const showLineaMainnet = shouldShowLineaMainnet();
+    this.store.updateState({ isLineaMainnetReleased: showLineaMainnet });
   }
 }

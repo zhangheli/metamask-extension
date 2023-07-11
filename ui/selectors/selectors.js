@@ -1,6 +1,7 @@
 ///: BEGIN:ONLY_INCLUDE_IN(snaps)
 import { SubjectType } from '@metamask/subject-metadata-controller';
 ///: END:ONLY_INCLUDE_IN
+import { ApprovalType } from '@metamask/controller-utils';
 import {
   createSelector,
   createSelectorCreator,
@@ -21,6 +22,7 @@ import {
   BSC_DISPLAY_NAME,
   POLYGON_DISPLAY_NAME,
   AVALANCHE_DISPLAY_NAME,
+  AURORA_DISPLAY_NAME,
   CHAIN_ID_TO_RPC_URL_MAP,
   CHAIN_IDS,
   NETWORK_TYPES,
@@ -28,9 +30,12 @@ import {
   SEPOLIA_DISPLAY_NAME,
   GOERLI_DISPLAY_NAME,
   ETH_TOKEN_IMAGE_URL,
-  LINEA_TESTNET_DISPLAY_NAME,
+  LINEA_GOERLI_DISPLAY_NAME,
   CURRENCY_SYMBOLS,
   TEST_NETWORK_TICKER_MAP,
+  LINEA_GOERLI_TOKEN_IMAGE_URL,
+  LINEA_MAINNET_TOKEN_IMAGE_URL,
+  LINEA_MAINNET_DISPLAY_NAME,
 } from '../../shared/constants/network';
 import {
   WebHIDConnectedStatuses,
@@ -63,7 +68,7 @@ import {
   ///: END:ONLY_INCLUDE_IN
 } from '../helpers/utils/util';
 
-import { TEMPLATED_CONFIRMATION_MESSAGE_TYPES } from '../pages/confirmation/templates';
+import { TEMPLATED_CONFIRMATION_APPROVAL_TYPES } from '../pages/confirmation/templates';
 import { STATIC_MAINNET_TOKEN_LIST } from '../../shared/constants/tokens';
 import { DAY } from '../../shared/constants/time';
 import { TERMS_OF_USE_LAST_UPDATED } from '../../shared/constants/terms';
@@ -501,9 +506,7 @@ export function getCurrentCurrency(state) {
 }
 
 export function getTotalUnapprovedCount(state) {
-  const { pendingApprovalCount = 0 } = state.metamask;
-
-  return pendingApprovalCount + getSuggestedAssetCount(state);
+  return state.metamask.pendingApprovalCount ?? 0;
 }
 
 export function getTotalUnapprovedMessagesCount(state) {
@@ -544,24 +547,37 @@ export function getUnapprovedTxCount(state) {
 }
 
 export function getUnapprovedConfirmations(state) {
-  const { pendingApprovals } = state.metamask;
+  const { pendingApprovals = {} } = state.metamask;
   return Object.values(pendingApprovals);
 }
 
 export function getUnapprovedTemplatedConfirmations(state) {
   const unapprovedConfirmations = getUnapprovedConfirmations(state);
   return unapprovedConfirmations.filter((approval) =>
-    TEMPLATED_CONFIRMATION_MESSAGE_TYPES.includes(approval.type),
+    TEMPLATED_CONFIRMATION_APPROVAL_TYPES.includes(approval.type),
   );
 }
 
-function getSuggestedAssetCount(state) {
-  const { suggestedAssets = [] } = state.metamask;
-  return suggestedAssets.length;
+export function getSuggestedTokens(state) {
+  return (
+    getUnapprovedConfirmations(state)?.filter(({ type, requestData }) => {
+      return (
+        type === ApprovalType.WatchAsset &&
+        requestData?.asset?.tokenId === undefined
+      );
+    }) || []
+  );
 }
 
-export function getSuggestedAssets(state) {
-  return state.metamask.suggestedAssets;
+export function getSuggestedNfts(state) {
+  return (
+    getUnapprovedConfirmations(state)?.filter(({ requestData, type }) => {
+      return (
+        type === ApprovalType.WatchAsset &&
+        requestData?.asset?.tokenId !== undefined
+      );
+    }) || []
+  );
 }
 
 export function getIsMainnet(state) {
@@ -955,6 +971,7 @@ function getAllowedAnnouncementIds(state) {
   const currentlyUsingLedgerLive =
     getLedgerTransportType(state) === LedgerTransportTypes.live;
   const isFirefox = window.navigator.userAgent.includes('Firefox');
+  const isSwapsChain = getIsSwapsChain(state);
 
   return {
     1: false,
@@ -974,9 +991,10 @@ function getAllowedAnnouncementIds(state) {
     15: false,
     16: false,
     17: false,
-    18: true,
-    19: true,
+    18: false,
+    19: false,
     20: currentKeyringIsLedger && isFirefox,
+    21: isSwapsChain,
   };
 }
 
@@ -1170,61 +1188,63 @@ export function getAllEnabledNetworks(state) {
 
 export function getAllNetworks(state) {
   const networkConfigurations = getNetworkConfigurations(state) || {};
-  const localhostFilter = (network) => network.chainId === CHAIN_IDS.LOCALHOST;
 
-  const networks = [];
-  // Mainnet always first
-  networks.push({
-    chainId: CHAIN_IDS.MAINNET,
-    nickname: MAINNET_DISPLAY_NAME,
-    rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.MAINNET],
-    rpcPrefs: {
-      imageUrl: ETH_TOKEN_IMAGE_URL,
+  const networks = [
+    // Mainnet always first
+    {
+      chainId: CHAIN_IDS.MAINNET,
+      nickname: MAINNET_DISPLAY_NAME,
+      rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.MAINNET],
+      rpcPrefs: {
+        imageUrl: ETH_TOKEN_IMAGE_URL,
+      },
+      providerType: NETWORK_TYPES.MAINNET,
+      ticker: CURRENCY_SYMBOLS.ETH,
     },
-    providerType: NETWORK_TYPES.MAINNET,
-    ticker: CURRENCY_SYMBOLS.ETH,
-  });
-  // Custom networks added
-  networks.push(
-    ...Object.entries(networkConfigurations)
-      .filter(
-        ([, network]) =>
-          !localhostFilter(network) &&
-          network.chainId !== CHAIN_IDS.MAINNET &&
-          // Linea gets added as a custom network configuration so
-          // we must ignore it here to display in test networks
-          network.chainId !== CHAIN_IDS.LINEA_TESTNET,
-      )
-      .map(([, network]) => network),
-  );
-  // Test networks
-  networks.push(
-    ...[
-      {
-        chainId: CHAIN_IDS.GOERLI,
-        nickname: GOERLI_DISPLAY_NAME,
-        rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.GOERLI],
-        providerType: NETWORK_TYPES.GOERLI,
-        ticker: TEST_NETWORK_TICKER_MAP[NETWORK_TYPES.GOERLI],
+    {
+      chainId: CHAIN_IDS.LINEA_MAINNET,
+      nickname: LINEA_MAINNET_DISPLAY_NAME,
+      rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.LINEA_MAINNET],
+      rpcPrefs: {
+        imageUrl: LINEA_MAINNET_TOKEN_IMAGE_URL,
       },
-      {
-        chainId: CHAIN_IDS.SEPOLIA,
-        nickname: SEPOLIA_DISPLAY_NAME,
-        rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.SEPOLIA],
-        providerType: NETWORK_TYPES.SEPOLIA,
-        ticker: TEST_NETWORK_TICKER_MAP[NETWORK_TYPES.SEPOLIA],
+      providerType: NETWORK_TYPES.LINEA_MAINNET,
+      ticker: TEST_NETWORK_TICKER_MAP[NETWORK_TYPES.LINEA_MAINNET],
+    },
+    // Custom networks added by the user
+    ...Object.values(networkConfigurations).filter(
+      ({ chainId }) => ![CHAIN_IDS.LOCALHOST].includes(chainId),
+    ),
+    // Test networks
+    {
+      chainId: CHAIN_IDS.GOERLI,
+      nickname: GOERLI_DISPLAY_NAME,
+      rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.GOERLI],
+      providerType: NETWORK_TYPES.GOERLI,
+      ticker: TEST_NETWORK_TICKER_MAP[NETWORK_TYPES.GOERLI],
+    },
+    {
+      chainId: CHAIN_IDS.SEPOLIA,
+      nickname: SEPOLIA_DISPLAY_NAME,
+      rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.SEPOLIA],
+      providerType: NETWORK_TYPES.SEPOLIA,
+      ticker: TEST_NETWORK_TICKER_MAP[NETWORK_TYPES.SEPOLIA],
+    },
+    {
+      chainId: CHAIN_IDS.LINEA_GOERLI,
+      nickname: LINEA_GOERLI_DISPLAY_NAME,
+      rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.LINEA_GOERLI],
+      rpcPrefs: {
+        imageUrl: LINEA_GOERLI_TOKEN_IMAGE_URL,
       },
-      {
-        chainId: CHAIN_IDS.LINEA_TESTNET,
-        nickname: LINEA_TESTNET_DISPLAY_NAME,
-        rpcUrl: CHAIN_ID_TO_RPC_URL_MAP[CHAIN_IDS.LINEA_TESTNET],
-        ticker: TEST_NETWORK_TICKER_MAP[NETWORK_TYPES.LINEA_TESTNET],
-      },
-    ], // Localhosts
-    ...Object.entries(networkConfigurations)
-      .filter(([, network]) => localhostFilter(network))
-      .map(([, network]) => network),
-  );
+      providerType: NETWORK_TYPES.LINEA_GOERLI,
+      ticker: TEST_NETWORK_TICKER_MAP[NETWORK_TYPES.LINEA_GOERLI],
+    },
+    // Localhosts
+    ...Object.values(networkConfigurations).filter(
+      ({ chainId }) => chainId === CHAIN_IDS.LOCALHOST,
+    ),
+  ];
 
   return networks;
 }
@@ -1279,13 +1299,15 @@ export const getTokenDetectionSupportNetworkByChainId = (state) => {
       return POLYGON_DISPLAY_NAME;
     case CHAIN_IDS.AVALANCHE:
       return AVALANCHE_DISPLAY_NAME;
+    case CHAIN_IDS.AURORA:
+      return AURORA_DISPLAY_NAME;
     default:
       return '';
   }
 };
 /**
- * To check if teh chainId supports token detection ,
- * currently it returns true for Ethereum Mainnet, Polygon, BSC and Avalanche
+ * To check if the chainId supports token detection,
+ * currently it returns true for Ethereum Mainnet, Polygon, BSC, Avalanche and Aurora
  *
  * @param {*} state
  * @returns Boolean
@@ -1297,6 +1319,7 @@ export function getIsDynamicTokenListAvailable(state) {
     CHAIN_IDS.BSC,
     CHAIN_IDS.POLYGON,
     CHAIN_IDS.AVALANCHE,
+    CHAIN_IDS.AURORA,
   ].includes(chainId);
 }
 
@@ -1339,7 +1362,7 @@ export function getIsTokenDetectionInactiveOnMainnet(state) {
 
 /**
  * To check for the chainId that supports token detection ,
- * currently it returns true for Ethereum Mainnet, Polygon, BSC and Avalanche
+ * currently it returns true for Ethereum Mainnet, Polygon, BSC, Avalanche and Aurora
  *
  * @param {*} state
  * @returns Boolean
@@ -1493,5 +1516,24 @@ export function getSnapsList(state) {
       name: getSnapName(snap.id, targetSubjectMetadata),
     };
   });
+}
+
+/**
+ * To get the state of snaps privacy warning popover.
+ *
+ * @param state - Redux state object.
+ * @returns True if popover has been shown, false otherwise.
+ */
+export function getSnapsInstallPrivacyWarningShown(state) {
+  const { snapsInstallPrivacyWarningShown } = state.metamask;
+
+  if (
+    snapsInstallPrivacyWarningShown === undefined ||
+    snapsInstallPrivacyWarningShown === null
+  ) {
+    return false;
+  }
+
+  return snapsInstallPrivacyWarningShown;
 }
 ///: END:ONLY_INCLUDE_IN

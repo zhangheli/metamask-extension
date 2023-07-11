@@ -3,6 +3,7 @@ import { useHistory } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import PropTypes from 'prop-types';
 import classnames from 'classnames';
+import { debounce } from 'lodash';
 import { getCurrentLocale } from '../../../ducks/locale/locale';
 import { I18nContext } from '../../../contexts/i18n';
 import { useEqualityCheck } from '../../../hooks/useEqualityCheck';
@@ -14,6 +15,7 @@ import { getTranslatedUINotifications } from '../../../../shared/notifications';
 import { getSortedAnnouncementsToShow } from '../../../selectors';
 import {
   BUILD_QUOTE_ROUTE,
+  PREPARE_SWAP_ROUTE,
   ADVANCED_ROUTE,
   EXPERIMENTAL_ROUTE,
   SECURITY_ROUTE,
@@ -83,6 +85,10 @@ function getActionFunctionById(id, history) {
       global.platform.openTab({
         url: ZENDESK_URLS.LEDGER_FIREFOX_U2F_GUIDE,
       });
+    },
+    21: () => {
+      updateViewedNotifications({ 21: true });
+      history.push(PREPARE_SWAP_ROUTE);
     },
   };
 
@@ -238,6 +244,16 @@ export default function WhatsNewPopup({ onClose }) {
 
   const trackEvent = useContext(MetaMetricsContext);
 
+  const handleDebouncedScroll = debounce((target) => {
+    setShouldShowScrollButton(
+      target.scrollHeight - target.scrollTop !== target.clientHeight,
+    );
+  }, 100);
+
+  const handleScroll = (e) => {
+    handleDebouncedScroll(e.target);
+  };
+
   const handleScrollDownClick = (e) => {
     e.stopPropagation();
     idRefMap[notifications[notifications.length - 1].id].current.scrollIntoView(
@@ -245,7 +261,6 @@ export default function WhatsNewPopup({ onClose }) {
         behavior: 'smooth',
       },
     );
-    setShouldShowScrollButton(false);
   };
   useEffect(() => {
     const observer = new window.IntersectionObserver(
@@ -300,6 +315,7 @@ export default function WhatsNewPopup({ onClose }) {
       popoverRef={popoverRef}
       showScrollDown={shouldShowScrollButton && notifications.length > 1}
       onScrollDownButtonClick={handleScrollDownClick}
+      onScroll={handleScroll}
     >
       <div className="whats-new-popup__notifications">
         {notifications.map(({ id }, index) => {
@@ -307,7 +323,7 @@ export default function WhatsNewPopup({ onClose }) {
           const isLast = index === notifications.length - 1;
           // Display the swaps notification with full image
           // Displays the NFTs & OpenSea notifications 18,19 with full image
-          return index === 0 || id === 1 || id === 18 || id === 19
+          return index === 0 || id === 1 || id === 18 || id === 19 || id === 21
             ? renderFirstNotification(
                 notification,
                 idRefMap,
